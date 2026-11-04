@@ -1,0 +1,16 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Data exports — never commit Salesforce data
+*.csv
+*.xlsx
+
+# System / tooling
+node_modules/
+.vercel/
+.DS_Store
+security-audit.log

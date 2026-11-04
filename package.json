@@ -1,0 +1,11 @@
+{
+  "name": "sdr-inbound-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal Commure SDR Inbound Follow-Up dashboard (live, read-only Salesforce).",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "check": "node scripts/check.js"
+  }
+}
