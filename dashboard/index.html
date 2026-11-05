@@ -472,7 +472,6 @@ function render(){ if(!S.pds) return; const L=filtered(); const A=stats(L);
    ["Meeting scheduled",fmt(A.mtg),`${pct(A.mtg,A.rn)} · meeting booked after the form`,1],
    ["Unqualified",fmt(A.unq),`${pct(A.unq,A.n)} of inbounds · not counted against rate`],
    ["Not followed up",fmt(A.rn-A.fu),`${pct(A.rn-A.fu,A.rn)} · no outreach logged`],
-   ["Unassigned",fmt(L.filter(p=>!p.respId).length),`No owner or integration user · ${fmt(L.filter(p=>p.respInactive).length)} owned by inactive users`],
    ["Median hrs to follow-up",A.med==null?"—":A.med.toFixed(1),`${pct(A.w24,A.ex)} within 24h (exact-time inbounds)`]
   ].map(([l,v,s,p])=>`<div class="kpi ${p?"pri":""}"><div class="l">${l}</div><div class="v">${v}</div><div class="n">${s}</div></div>`).join("");
   const g=new Map();L.forEach(p=>{const k=p.resp;if(!g.has(k))g.set(k,[]);g.get(k).push(p);});
