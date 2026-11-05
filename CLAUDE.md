@@ -28,11 +28,15 @@ Read this before changing anything in this repository.
 
 ## Metric definitions (source of truth: the "How to read this" box in `dashboard/index.html`)
 - **Inbound** = one person submitting one or more Sales-Intent forms on a given day, after removing duplicates, tests and internal submissions.
-- **Followed up** = outbound call (any result), manual sales email, or Outreach sequence email logged after the submission.
-- **Connected** = call where the rep reached the person (or a verified completed meeting).
+- Outcomes are a **waterfall** (approved by Lily, Nov 5, 2026): Meeting scheduled ⊂ Connected ⊂ Followed up.
+- **Followed up** = outbound call (any result), manual sales email, Outreach sequence email, or booked meeting logged after the submission.
+- **Connected** = call where the rep reached the person, a verified completed meeting, or a booked meeting.
+- **Meeting scheduled** = non-cancelled Event with the person (WhoId), credited by the Event's CreatedDate to the most recent submission before it. Future meetings count.
+- **Team** = matched on current Owner via the `TEAMS` list (Salesforce User IDs) in `dashboard/index.html`. People can be on multiple teams.
 - **Unqualified** = Lead/Contact status Unqualified and not followed up; excluded from the follow-up rate.
 - **Owner** = current Lead/Contact Owner; integration/system users show as Unassigned.
 
 ## Settings that need periodic review
 - `FORMS` list (approved Sales-Intent forms)
+- `TEAMS` list (team membership; update when people join, leave or change teams)
 - `U` (named system/RevOps user IDs) and `NONSALES_SNAP` (saved Oct 22, 2026, non-sales users list). Review quarterly with RevOps.

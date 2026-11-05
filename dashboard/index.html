@@ -25,7 +25,7 @@ table{border-collapse:collapse;width:100%;font-size:12px}th,td{border-bottom:1px
 th{background:#f0f2f5;cursor:pointer;white-space:nowrap;position:sticky;top:0}td.num,th.num{text-align:right}
 .tw{max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:4px}
 .pill{display:inline-block;padding:1px 6px;border-radius:9px;font-size:11px;white-space:nowrap}
-.p-conn{background:#e3f4ea;color:#1a7f4b}.p-man{background:#e8eefb;color:#1F3864}.p-seq{background:#f0eafd;color:#6941c6}.p-none{background:#fde8e7;color:#b42318}.p-gray{background:#eef0f3;color:#5b6472}
+.p-meet{background:#1a7f4b;color:#fff}.p-conn{background:#e3f4ea;color:#1a7f4b}.p-man{background:#e8eefb;color:#1F3864}.p-seq{background:#f0eafd;color:#6941c6}.p-none{background:#fde8e7;color:#b42318}.p-gray{background:#eef0f3;color:#5b6472}
 .tools{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}.btn{font:inherit;font-size:12px;padding:4px 10px;border:1px solid #c9ced6;border-radius:4px;background:#fff;cursor:pointer}
 .tog{display:flex;gap:4px;align-items:center;font-size:12px}a{color:#1d4ed8}.muted{color:var(--g)}
 .err{background:#fde8e7;color:#b42318;padding:10px;border-radius:6px;margin:10px 18px;display:none}
@@ -39,6 +39,7 @@ th{background:#f0f2f5;cursor:pointer;white-space:nowrap;position:sticky;top:0}td
  <div class="f"><label>Submission date</label><select id="fDate"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="60">Last 60 days</option><option value="90" selected>Last 90 days</option><option value="custom">Custom range</option></select></div>
  <div class="f" id="customWrap" style="display:none"><label>From – To</label><div><input type="date" id="fFrom"> <input type="date" id="fTo"> <button class="btn" id="applyCustom">Apply</button></div></div>
  <div class="f"><label>Form</label><div class="ms" id="msForm"></div></div>
+ <div class="f"><label>Team</label><div class="ms" id="msTeam"></div></div>
  <div class="f"><label>Owner</label><div class="ms" id="msOwner"></div></div>
  <div class="f"><label>Follow-up</label><div class="ms" id="msFU"></div></div>
  <div class="f"><label>Search</label><input type="text" id="q" placeholder="Name, company, email…" style="width:200px"></div>
@@ -54,8 +55,12 @@ th{background:#f0f2f5;cursor:pointer;white-space:nowrap;position:sticky;top:0}td
   <div class="tw" id="tAll"></div></div>
  <div class="card foot"><b>How to read this</b><br>
   <b>Inbound</b> = one person submitting one or more Sales-Intent forms on a given day (duplicates, tests and internal submissions removed).<br>
-  <b>Followed up</b> = an outbound call (any result), a manual sales email, or an Outreach sequence email logged in Salesforce after the submission. <b>Connected</b> = a call where the rep reached the person.<br>
-  <b>No follow-up</b> = no call or Outreach email logged after the submission.<br>
+  The outcomes are a waterfall: every <b>Meeting scheduled</b> also counts as <b>Connected</b>, and every Connected also counts as <b>Followed up</b>.<br>
+  <b>Followed up</b> = any outreach logged in Salesforce after the submission: an outbound call (any result), a manual sales email, an Outreach sequence email, or a booked meeting.<br>
+  <b>Connected</b> = the rep reached the person: a call logged with an "Answered" or "Correct contact" result, or a booked meeting.<br>
+  <b>Meeting scheduled</b> = a meeting (calendar invite) in Salesforce with this person that was booked after the submission and not cancelled. Future meetings count. “Meeting booked for” shows the date of the first one.<br>
+  <b>Not followed up</b> = no call, email or meeting logged after the submission. Percentages exclude unqualified inbounds.<br>
+  <b>Team</b> = inbounds whose current Owner is on that team. Someone on two teams (e.g. Natasha) shows under both.<br>
   <b>Unqualified</b> = the Lead/Contact is marked Unqualified in Salesforce and wasn’t followed up. These are excluded from the follow-up rate so they don’t count against the rep (unqualified inbounds that were followed up still count as followed up).<br>
   <b>Owner</b> = the current Lead/Contact Owner in Salesforce (inactive users are marked “(inactive)”, queues “(queue)”). <b>Unassigned</b> = no owner, or owned by an integration/system user. <b>Followed up by</b> = the rep who logged the first follow-up.<br>
   <b>Unqualified reason / by</b> come from the Lead’s Unqualified Reason and Unqualified Explanation fields and its status history. Contacts don’t track these, so they show blank.<br>
@@ -100,7 +105,7 @@ const CONNECTED = new Set(["Answered - Meeting Set","Answered - Not Interested",
 const NOT_CONNECTED = new Set(["No Answer","Left Voicemail","Bad Number","Gatekeeper"]);
 const INTERNAL_DOMAINS = ["commure.com","athelas.com","getathelas.com","augmedix.com"];
 const DISPOSABLE = ["example.com","example.net","example.org","mailinator.com","yopmail.com","guerrillamail.com","10minutemail.com","tempmail.com"];
-const FU_ORDER = ["Connected","Manual Outreach Attempted","Automated Sequence Email Only","No Sales Activity"];
+const FU_ORDER = ["Meeting Scheduled","Connected","Manual Outreach Attempted","Automated Sequence Email Only","No Sales Activity"];
 // ---------- helpers ----------
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -274,7 +279,7 @@ async function load(startDs){
   const actIds = Object.keys(REC);
   const [acts, evs] = await Promise.all([
     safe(byIds(actIds, ids=>`SELECT Id, WhoId, OwnerId, TaskSubtype, CallType, CallDisposition, Subject, Sequence_Name__c, CreatedDate, CreatedById FROM Task WHERE WhoId IN (${ids}) AND TaskSubtype IN ('Call','Email') AND CreatedDate >= ${startDT}`, 200),"Sales activities"),
-    safe(byIds(actIds, ids=>`SELECT Id, WhoId, OwnerId, Subject, StartDateTime, EndDateTime, Event_Status__c, Meeting_Completed_Date__c, No_Show__c, CreatedById FROM Event WHERE WhoId IN (${ids}) AND StartDateTime >= ${startDT}`, 200),"Meetings")
+    safe(byIds(actIds, ids=>`SELECT Id, WhoId, OwnerId, Subject, StartDateTime, EndDateTime, Event_Status__c, Meeting_Completed_Date__c, No_Show__c, CreatedDate, CreatedById FROM Event WHERE WhoId IN (${ids}) AND StartDateTime >= ${startDT}`, 200),"Meetings")
   ]);
   const ACT = {};
   const push = (who,a) => (ACT[who]=ACT[who]||[]).push(a);
@@ -293,6 +298,10 @@ async function load(startDs){
   });
   let meetUnverified=0;
   evs.forEach(e=>{ if (ACT_EXCLUDED_CREATORS.has(e.CreatedById)) return;
+    if (e.Event_Status__c==="Cancelled") return;
+    // Meeting scheduled: any non-cancelled meeting with this person, timed by when it was BOOKED (created),
+    // so it ties to the form submission it followed. Future meetings count.
+    push(e.WhoId,{t:new Date(e.CreatedDate), cls:"meet_sched", owner:e.OwnerId, start:new Date(e.StartDateTime)});
     const verified = (e.Event_Status__c==="Completed"||e.Meeting_Completed_Date__c) && !e.No_Show__c;
     if (verified) push(e.WhoId,{t:new Date(e.EndDateTime||e.StartDateTime), cls:"meet_ver", owner:e.OwnerId});
     else if (new Date(e.EndDateTime||e.StartDateTime) < new Date()) { meetUnverified++; push(e.WhoId,{t:new Date(e.StartDateTime), cls:"meet_unv", owner:e.OwnerId}); }
@@ -380,7 +389,7 @@ function buildPersonDays(events){
     list.forEach(pd=>pd.acts=[]);
     acts.forEach(a=>{ let tgt=null; for(const pd of list){ if (pd.start<=a.t) tgt=pd; } if (tgt) tgt.acts.push(a); });
     list.forEach((pd,i)=>{
-      const prim = pd.acts.filter(a=>["call_conn","call_nc","call_amb","email_man","meet_ver"].includes(a.cls));
+      const prim = pd.acts.filter(a=>["call_conn","call_nc","call_amb","email_man","meet_ver","meet_sched"].includes(a.cls));
       pd.calls = pd.acts.filter(a=>a.cls.startsWith("call")).length;
       pd.callsConn = pd.acts.filter(a=>a.cls==="call_conn").length;
       pd.callsNC = pd.acts.filter(a=>a.cls==="call_nc").length;
@@ -389,8 +398,10 @@ function buildPersonDays(events){
       pd.seqEmails = pd.acts.filter(a=>a.cls==="email_seq").length;
       pd.meetVer = pd.acts.filter(a=>a.cls==="meet_ver").length;
       pd.meetUnv = pd.acts.filter(a=>a.cls==="meet_unv").length;
-      pd.fu = (pd.callsConn||pd.meetVer) ? "Connected" : prim.length ? "Manual Outreach Attempted" : pd.seqEmails ? "Automated Sequence Email Only" : "No Sales Activity";
-      pd.confirmed = pd.fu==="Connected"||pd.fu==="Manual Outreach Attempted";
+      const ms = pd.acts.filter(a=>a.cls==="meet_sched"); pd.meetSched = ms.length; pd.meetFirst = ms[0]||null;
+      // Waterfall: Meeting scheduled ⊂ Connected ⊂ Followed up
+      pd.fu = pd.meetSched ? "Meeting Scheduled" : (pd.callsConn||pd.meetVer) ? "Connected" : prim.length ? "Manual Outreach Attempted" : pd.seqEmails ? "Automated Sequence Email Only" : "No Sales Activity";
+      pd.confirmed = pd.fu==="Meeting Scheduled"||pd.fu==="Connected"||pd.fu==="Manual Outreach Attempted";
       pd.first = prim[0]||null; pd.followedBy = pd.first ? pd.first.owner : null;
       pd.hrs = pd.first && pd.exactTime ? (pd.first.t - pd.exactTime)/36e5 : null;
       pd.ttf = !pd.first ? "No follow-up" : pd.hrs==null ? "Unknown (no exact time)" : pd.hrs<=1?"≤1h":pd.hrs<=4?"1–4h":pd.hrs<=24?"4–24h":pd.hrs<=48?"24–48h":">48h";
@@ -412,10 +423,17 @@ function buildPersonDays(events){
   S.pds = pds;
 }
 // ---------- Team view UI ----------
-const LABEL={"Connected":"Connected","Manual Outreach Attempted":"Attempted – not connected","Automated Sequence Email Only":"Outreach sequence email","No Sales Activity":"No follow-up","Unqualified":"Unqualified – no follow-up needed"};
-const PCLS={"Connected":"p-conn","Manual Outreach Attempted":"p-man","Automated Sequence Email Only":"p-seq","No Sales Activity":"p-none","Unqualified":"p-gray"};
+const LABEL={"Meeting Scheduled":"Meeting scheduled","Connected":"Connected","Manual Outreach Attempted":"Attempted – not connected","Automated Sequence Email Only":"Outreach sequence email","No Sales Activity":"No follow-up","Unqualified":"Unqualified – no follow-up needed"};
+const PCLS={"Meeting Scheduled":"p-meet","Connected":"p-conn","Manual Outreach Attempted":"p-man","Automated Sequence Email Only":"p-seq","No Sales Activity":"p-none","Unqualified":"p-gray"};
 const pill=s=>`<span class="pill ${PCLS[s]}">${LABEL[s]}</span>`;
-const F={forms:null,owners:null,fu:null};
+const F={forms:null,owners:null,fu:null,teams:null};
+// Teams = Salesforce User IDs of each team's members (a person can be on more than one team).
+// Team filter matches on the inbound's current Owner. To change a team, edit the IDs here.
+const TEAMS={
+ "Enterprise":["005Vo00000A8hzjIAB" /*Van Nguyen (inactive)*/,"005Vo00000EAGZhIAP" /*Scott Gilbertson (inactive)*/,"005Vo00000OoNgMIAV" /*Bryan Bynum*/,"005Vo000017N5wvIAC" /*Mia Sacco*/,"005Vo0000173ZPhIAM" /*Isaac Troy*/,"005Vo000016iIGdIAM" /*Ireland Conti*/,"005Vo0000103qb3IAA" /*Natasha Chodavarapu*/,"005Vo000000LRjaIAG" /*Jenny Pham*/],
+ "Agents":["005Vo0000103qb3IAA" /*Natasha Chodavarapu*/,"005Vo00000EAGZhIAP" /*Scott Gilbertson (inactive)*/,"005Vo00000NCWDNIA5" /*Han Kang*/],
+ "Mid-Market/Athelas":["005Vo000007rdvFIAQ" /*Grace Martello*/]
+};
 function multiSelect(el,label,options,key,onChange){
   el.innerHTML=`<button class="msb">${label}: All</button><div class="pop"><input type="text" placeholder="Search…" style="width:100%;margin-bottom:4px"><div class="acts"><a data-a="all">Select all</a><a data-a="none">Clear</a></div><div class="opts"></div></div>`;
   const btn=el.querySelector(".msb"),opts=el.querySelector(".opts"),search=el.querySelector("input"); let sel=new Set(options.map(o=>o.v));
@@ -434,7 +452,7 @@ const formsOf=pd=>{const[f,t]=range();return[...new Set(pd.events.filter(e=>evOk
 const age=p=>Math.round((new Date(today+"T12:00:00Z")-new Date(p.date+"T12:00:00Z"))/864e5);
 function filtered(){const[f,t]=range();const qq=$("q").value.toLowerCase();
   return S.pds.filter(pd=>pd.events.some(e=>evOk(e,f,t))
-   &&(!F.owners||F.owners.has(pd.resp))&&(!F.fu||F.fu.has(pd.fu))
+   &&(!F.owners||F.owners.has(pd.resp))&&(!F.teams||[...F.teams].some(t=>(TEAMS[t]||[]).includes(pd.respId)))&&(!F.fu||F.fu.has(pd.fu))
    &&(!qq||[pd.name,pd.rec?.title,pd.company,pd.email,pd.resp,pd.unqReason,pd.unqBy].join(" ").toLowerCase().includes(qq)));}
 const TS={};let CSVDATA=null;
 function table(id,cols,rows,def){const st=(TS[id]=TS[id]||{k:def?.k??null,d:def?.d??-1});
@@ -445,29 +463,31 @@ function table(id,cols,rows,def){const st=(TS[id]=TS[id]||{k:def?.k??null,d:def?
   return rows;}
 const n=v=>v==null?{h:"—",s:-1}:{h:fmt(Math.round(v*10)/10),s:v};
 const r=(a,b)=>({h:pct(a,b),s:b?a/b:-1});
-function stats(L){const hrs=L.map(p=>p.hrs).filter(h=>h!=null);return{n:L.length,fu:L.filter(p=>p.confirmed).length,conn:L.filter(p=>p.fu==="Connected").length,seq:L.filter(p=>p.fu==="Automated Sequence Email Only").length,none:L.filter(p=>p.fu==="No Sales Activity").length,unq:L.filter(p=>p.fu==="Unqualified").length,rn:L.length-L.filter(p=>p.fu==="Unqualified").length,med:median(hrs),w24:hrs.filter(h=>h<=24).length,ex:hrs.length};}
+function stats(L){const hrs=L.map(p=>p.hrs).filter(h=>h!=null);return{n:L.length,fu:L.filter(p=>p.confirmed).length,conn:L.filter(p=>p.fu==="Connected"||p.fu==="Meeting Scheduled").length,mtg:L.filter(p=>p.fu==="Meeting Scheduled").length,seq:L.filter(p=>p.fu==="Automated Sequence Email Only").length,none:L.filter(p=>p.fu==="No Sales Activity").length,unq:L.filter(p=>p.fu==="Unqualified").length,rn:L.length-L.filter(p=>p.fu==="Unqualified").length,med:median(hrs),w24:hrs.filter(h=>h<=24).length,ex:hrs.length};}
 function render(){ if(!S.pds) return; const L=filtered(); const A=stats(L);
   $("kpis").innerHTML=[
-   ["Inbounds",fmt(A.n),"Unique people per day",1],
-   ["Followed up",pct(A.fu,A.rn),`${fmt(A.fu)} with a call or Outreach email · unqualified excluded`,1],
-   ["Connected",pct(A.conn,A.rn),`${fmt(A.conn)} reached by phone`],
-   ["Not followed up",fmt(A.rn-A.fu),"No call or Outreach email logged"],["Unqualified",fmt(A.unq),"Marked Unqualified, no follow-up — not counted against rate"],
+   ["Inbound leads",fmt(A.n),`Unique people per day · ${fmt(A.rn)} after unqualified`,1],
+   ["Followed up",fmt(A.fu),`${pct(A.fu,A.rn)} · any call, email or meeting`,1],
+   ["Connected",fmt(A.conn),`${pct(A.conn,A.rn)} · reached the person`,1],
+   ["Meeting scheduled",fmt(A.mtg),`${pct(A.mtg,A.rn)} · meeting booked after the form`,1],
+   ["Unqualified",fmt(A.unq),`${pct(A.unq,A.n)} of inbounds · not counted against rate`],
+   ["Not followed up",fmt(A.rn-A.fu),`${pct(A.rn-A.fu,A.rn)} · no outreach logged`],
    ["Unassigned",fmt(L.filter(p=>!p.respId).length),`No owner or integration user · ${fmt(L.filter(p=>p.respInactive).length)} owned by inactive users`],
    ["Median hrs to follow-up",A.med==null?"—":A.med.toFixed(1),`${pct(A.w24,A.ex)} within 24h (exact-time inbounds)`]
   ].map(([l,v,s,p])=>`<div class="kpi ${p?"pri":""}"><div class="l">${l}</div><div class="v">${v}</div><div class="n">${s}</div></div>`).join("");
   const g=new Map();L.forEach(p=>{const k=p.resp;if(!g.has(k))g.set(k,[]);g.get(k).push(p);});
-  table("tOwn",[{l:"Owner"},{l:"Inbounds",n:1},{l:"Followed up",n:1},{l:"Rate",n:1},{l:"Connected",n:1},{l:"Not followed up",n:1},{l:"Unqualified",n:1},{l:"Median hrs",n:1}],
-   [...g.entries()].map(([o,v])=>{const a=stats(v);return[o,n(a.n),n(a.fu),r(a.fu,a.rn),n(a.conn),n(a.rn-a.fu),n(a.unq),n(a.med)];}),{k:1});
+  table("tOwn",[{l:"Owner"},{l:"Inbounds",n:1},{l:"Followed up",n:1},{l:"Rate",n:1},{l:"Connected",n:1},{l:"Meetings",n:1},{l:"Not followed up",n:1},{l:"Unqualified",n:1},{l:"Median hrs",n:1}],
+   [...g.entries()].map(([o,v])=>{const a=stats(v);return[o,n(a.n),n(a.fu),r(a.fu,a.rn),n(a.conn),n(a.mtg),n(a.rn-a.fu),n(a.unq),n(a.med)];}),{k:1});
   const fm=new Map();L.forEach(p=>formsOf(p).forEach(f=>{if(!fm.has(f))fm.set(f,[]);fm.get(f).push(p);}));
-  table("tForm",[{l:"Form"},{l:"Inbounds",n:1},{l:"Followed up",n:1},{l:"Rate",n:1},{l:"Not followed up",n:1},{l:"Unqualified",n:1},{l:"Unassigned",n:1}],
-   [...fm.entries()].map(([f,v])=>{const a=stats(v);return[f,n(a.n),n(a.fu),r(a.fu,a.rn),n(a.rn-a.fu),n(a.unq),n(v.filter(p=>!p.respId).length)];}),{k:1});
+  table("tForm",[{l:"Form"},{l:"Inbounds",n:1},{l:"Followed up",n:1},{l:"Rate",n:1},{l:"Meetings",n:1},{l:"Not followed up",n:1},{l:"Unqualified",n:1},{l:"Unassigned",n:1}],
+   [...fm.entries()].map(([f,v])=>{const a=stats(v);return[f,n(a.n),n(a.fu),r(a.fu,a.rn),n(a.mtg),n(a.rn-a.fu),n(a.unq),n(v.filter(p=>!p.respId).length)];}),{k:1});
   const rows=L.filter(p=>!$("onlyNot").checked||(!p.confirmed&&!p.unq));
   $("cnt").textContent=fmt(rows.length)+" inbounds";
-  CSVDATA=table("tAll",[{l:"Submitted"},{l:"Name"},{l:"Title"},{l:"Company"},{l:"Form(s)"},{l:"Owner"},{l:"Followed up by"},{l:"Follow-up"},{l:"Unqualified"},{l:"Unqualified reason"},{l:"Unqualified by"},{l:"First follow-up (PT)"},{l:"Hrs to follow-up",n:1},{l:"Days since submitted",n:1},{l:"Salesforce"}],
+  CSVDATA=table("tAll",[{l:"Submitted"},{l:"Name"},{l:"Title"},{l:"Company"},{l:"Form(s)"},{l:"Owner"},{l:"Followed up by"},{l:"Follow-up"},{l:"Unqualified"},{l:"Unqualified reason"},{l:"Unqualified by"},{l:"First follow-up (PT)"},{l:"Hrs to follow-up",n:1},{l:"Meeting booked for (PT)"},{l:"Days since submitted",n:1},{l:"Salesforce"}],
    rows.map(p=>[p.date,p.name,p.rec?.title||p.events.map(e=>e.f.title).find(Boolean)||"",p.company,formsOf(p).join("; "),p.resp,p.followedBy?ownerName(p.followedBy):"",{h:pill(p.fu),s:FU_ORDER.indexOf(p.fu),c:LABEL[p.fu]},p.unq?"Yes":"",p.unq?(p.unqReason||""):"",p.unq?(p.unqBy||""):"",
-     p.first?ptDT(p.first.t):"",p.first?(p.hrs==null?{h:"Unknown",s:-1,c:"Unknown"}:n(p.hrs)):{h:"—",s:-2,c:""},n(age(p)),
+     p.first?ptDT(p.first.t):"",p.first?(p.hrs==null?{h:"Unknown",s:-1,c:"Unknown"}:n(p.hrs)):{h:"—",s:-2,c:""},p.meetFirst?{h:esc(ptDT(p.meetFirst.start)),s:+p.meetFirst.start,c:ptDT(p.meetFirst.start)}:{h:"",s:0,c:""},n(age(p)),
      p.recId?{h:`<a href="${SF}${p.type}/${p.recId}/view" target="_blank">Open ${p.type}</a>`,s:p.recId,c:`${SF}${p.type}/${p.recId}/view`}:"—"]),{k:0,d:-1});
-  CSVDATA={cols:["Submitted","Name","Title","Company","Form(s)","Owner","Followed up by","Follow-up","Unqualified","Unqualified reason","Unqualified by","First follow-up (PT)","Hrs to follow-up","Days since submitted","Salesforce"],rows:CSVDATA};
+  CSVDATA={cols:["Submitted","Name","Title","Company","Form(s)","Owner","Followed up by","Follow-up","Unqualified","Unqualified reason","Unqualified by","First follow-up (PT)","Hrs to follow-up","Meeting booked for (PT)","Days since submitted","Salesforce"],rows:CSVDATA};
 }
 $("csv").onclick=()=>{if(!CSVDATA)return;const c=v=>'"'+String(v?.c??v?.h??v??"").replace(/<[^>]+>/g,"").replace(/"/g,'""')+'"';
   const txt=[CSVDATA.cols.map(c).join(","),...CSVDATA.rows.map(r=>r.map(c).join(","))].join("\n");
@@ -477,6 +497,7 @@ $("fDate").onchange=()=>{const c=$("fDate").value==="custom";$("customWrap").sty
 $("applyCustom").onclick=async()=>{const[f]=range();if(!f)return;if(f<S.loadedStart){if(f<addDays(today,-365)){alert("Custom ranges are limited to the last 365 days.");return;}await run(f);}else render();};
 function initFilters(){
   multiSelect($("msForm"),"Forms",FORMS.map(f=>f[0].trim()).filter(f=>S.raw.some(r=>r.form===f)).map(v=>({v,l:v})),"forms",render);
+  multiSelect($("msTeam"),"Team",Object.keys(TEAMS).map(v=>({v,l:v})),"teams",render);
   multiSelect($("msOwner"),"Owner",[...new Set(S.pds.map(p=>p.resp))].sort().map(v=>({v,l:v})),"owners",render);
   multiSelect($("msFU"),"Status",FU_ORDER.map(v=>({v,l:LABEL[v]})),"fu",render);
 }
@@ -485,7 +506,7 @@ const INTEG=new Set([U.HUBSPOT,U.SYSINT,U.AUTOPROC]);
 const isInteg=id=>!id||INTEG.has(id)||(S.users[id]&&["General Athelas","Data Migration","Hubspot Integration","System Integrations","Automated Process"].includes(S.users[id].name));
 if(!FU_ORDER.includes("Unqualified")) FU_ORDER.push("Unqualified");
 function teamify(){ S.pds.forEach(pd=>{
-  const fu=(pd.acts||[]).filter(a=>["call_conn","call_nc","call_amb","email_man","meet_ver","email_seq"].includes(a.cls));
+  const fu=(pd.acts||[]).filter(a=>["call_conn","call_nc","call_amb","email_man","meet_ver","meet_sched","email_seq"].includes(a.cls));
   pd.confirmed=fu.length>0; pd.first=fu[0]||null; pd.followedBy=pd.first?pd.first.owner:null;
   pd.hrs=pd.first&&pd.exactTime?(pd.first.t-pd.exactTime)/36e5:null;
   const id = !isInteg(pd.ownCur) ? pd.ownCur : null; // Current Owner is the primary ownership
