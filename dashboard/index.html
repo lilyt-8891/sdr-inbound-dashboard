@@ -30,11 +30,23 @@ th{background:#f0f2f5;cursor:pointer;white-space:nowrap;position:sticky;top:0}td
 .tog{display:flex;gap:4px;align-items:center;font-size:12px}a{color:#1d4ed8}.muted{color:var(--g)}
 .err{background:#fde8e7;color:#b42318;padding:10px;border-radius:6px;margin:10px 18px;display:none}
 .foot{font-size:11.5px;color:var(--g);line-height:1.5}
+.tabs{background:#fff;border-bottom:1px solid var(--line);padding:0 18px;display:flex;gap:4px}
+.tab{font:inherit;font-size:13px;font-weight:bold;color:var(--g);background:none;border:0;border-bottom:3px solid transparent;padding:9px 12px;cursor:pointer}.tab.on{color:var(--b);border-bottom-color:var(--b)}
+.scope{display:flex;gap:6px;align-items:center;margin-bottom:10px;font-size:12px}.btn.sc.on{background:var(--b);color:#fff;border-color:var(--b)}.btn:disabled{opacity:.45;cursor:default}
+.hero2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.hero .l{font-size:11px;color:var(--g);font-weight:bold;text-transform:uppercase}.hero .big{font-size:40px;font-weight:bold;color:var(--b);line-height:1.1;margin:4px 0}
+.hero .big.good{color:#1a7f4b}.hero .big.bad{color:#b42318}.hero .sm{font-size:12px;color:var(--g);margin-top:4px}
+.prog2{height:10px;background:var(--line);border-radius:5px;position:relative;margin:8px 0 4px;overflow:visible}.prog2>div{height:100%;border-radius:5px;background:var(--b)}.prog2 .tgt{position:absolute;top:-4px;width:2px;height:18px;background:#111}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chip{background:#f0f2f5;border-radius:10px;padding:2px 8px;font-size:11.5px}
+.fn{display:grid;grid-template-columns:150px 1fr 90px;gap:8px;align-items:center;margin:5px 0;font-size:12px}.fn .bw{background:#f0f2f5;border-radius:4px;height:22px}.fn .bw>div{height:100%;border-radius:4px;background:var(--b);min-width:2px}.fn .v{text-align:right;font-weight:bold}.fn .v span{font-weight:normal;color:var(--g)}
+.late{color:#b42318;font-weight:bold}.c-g{color:#1a7f4b;font-weight:bold}.c-a{color:#b25e09;font-weight:bold}.c-r{color:#b42318;font-weight:bold}
+details.card summary{cursor:pointer}
 </style></head><body>
 <header><div style="float:right;font-size:12px;color:var(--g)"><span id="who"></span> · <a href="/api/auth/logout">Sign out</a></div><h1>Inbound Routing &amp; Follow-Up — Team View</h1>
 <div class="sub">Every Sales-Intent inbound, who it was routed to, and whether Sales followed up · Live from Salesforce (read-only) · Pacific Time</div>
 <div id="status">Loading…</div><div class="bar"><div id="prog"></div></div></header>
 <div class="err" id="err"></div>
+<nav class="tabs"><button class="tab on" data-v="team">Team view</button><button class="tab" data-v="sdr">SDR view</button></nav>
 <div class="filters" id="filters">
  <div class="f"><label>Submission date</label><select id="fDate"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="60">Last 60 days</option><option value="90" selected>Last 90 days</option><option value="custom">Custom range</option></select></div>
  <div class="f" id="customWrap" style="display:none"><label>From – To</label><div><input type="date" id="fFrom"> <input type="date" id="fTo"> <button class="btn" id="applyCustom">Apply</button></div></div>
@@ -45,6 +57,24 @@ th{background:#f0f2f5;cursor:pointer;white-space:nowrap;position:sticky;top:0}td
  <div class="f"><label>Search</label><input type="text" id="q" placeholder="Name, company, email…" style="width:200px"></div>
 </div>
 <main>
+ <section id="viewSDR" style="display:none">
+  <div class="scope"><span class="muted">Showing:</span> <button class="btn sc" data-s="mine" id="scMine">My leads</button><button class="btn sc" data-s="all">Everyone</button> <span class="muted" id="scNote"></span></div>
+  <div class="hero2">
+   <div class="card hero" id="hSla"></div>
+   <div class="card hero" id="hNeed"></div>
+  </div>
+  <div class="card"><h3>Funnel</h3><div class="note">Percentages are of workable inbounds (inbounds minus unqualified).</div><div id="funnel"></div></div>
+  <div class="card"><h3>Needs follow-up now</h3><div class="note">Workable inbounds with no call, email or meeting logged yet, oldest first. Red = waiting more than 24 hours.</div>
+   <div class="tools"><button class="btn" id="csvS">Export CSV</button><span class="muted" id="cntS"></span></div>
+   <div class="tw" id="tNeed"></div></div>
+  <div class="card"><h3>By owner</h3><div class="note">Sorted by Needs follow-up. % within 24h: green = at or above the 80% target, amber = 50–79%, red = below 50%.</div><div class="tw" id="tOwnS" style="max-height:380px"></div></div>
+  <details class="card"><summary><b>Diagnostics</b> <span class="muted">· by form (for managers). The full list of inbounds is in the Team view tab.</span></summary><div class="tw" id="tFormS" style="max-height:380px;margin-top:8px"></div></details>
+  <div class="card foot"><b>How to read this</b><br>
+   <b>% followed up within 24 hrs</b> = of workable inbounds with an exact submission time, the share that got any outreach (call, email or booked meeting) within 24 hours of submitting. Inbounds less than 24 hours old that haven’t been followed up yet aren’t counted until their 24 hours are up. Target: 80%.<br>
+   <b>Workable</b> = inbounds minus unqualified. <b>Needs follow-up now</b> = workable inbounds with no outreach logged yet. Goal: 0.<br>
+   <b>My leads</b> = inbounds currently owned by you in Salesforce. All other definitions match the Team view tab.</div>
+ </section>
+ <section id="viewTeam">
  <div class="kpis" id="kpis"></div>
  <div class="grid2">
   <div class="card"><h3>By owner</h3><div class="note">Owner = the current Lead/Contact Owner in Salesforce (inactive users marked “(inactive)”, queues “(queue)”).</div><div class="tw" id="tOwn" style="max-height:380px"></div></div>
@@ -65,6 +95,7 @@ th{background:#f0f2f5;cursor:pointer;white-space:nowrap;position:sticky;top:0}td
   <b>Owner</b> = the current Lead/Contact Owner in Salesforce (inactive users are marked “(inactive)”, queues “(queue)”). <b>Unassigned</b> = no owner, or owned by an integration/system user. <b>Followed up by</b> = the rep who logged the first follow-up.<br>
   <b>Unqualified reason / by</b> come from the Lead’s Unqualified Reason and Unqualified Explanation fields and its status history. Contacts don’t track these, so they show blank.<br>
   <b>Hours to follow-up</b> is shown only when the exact submission time is known; otherwise “Unknown”. Data refreshes each time the page is opened or reloaded.</div>
+ </section>
 </main>
 <script>
 
@@ -83,7 +114,7 @@ async function callSoql(soql){
   if (!resp.ok || body.isError) return {isError:true, content:[{text:body.message||("HTTP "+resp.status)}]};
   return {isError:false, structuredContent:body};
 }
-fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(m=>{ if(m&&m.name) document.getElementById("who").textContent="Signed in as "+m.name; }).catch(()=>{});
+let ME=""; const meReady = fetch("/api/me",{credentials:"same-origin"}).then(r=>r.ok?r.json():null).then(m=>{ if(m&&m.name){ ME=m.name; document.getElementById("who").textContent="Signed in as "+m.name; } }).catch(()=>{});
 const SF = "https://athelas.lightning.force.com/lightning/r/";
 const TZ = "America/Los_Angeles";
 // ---------- Configuration (approved Phase 2 rules) ----------
@@ -450,7 +481,7 @@ const ownerLabel=id=>id?ownerName(id):"Unassigned";
 const evOk=(e,f,t)=>e.date>=f&&e.date<=t&&!e.tests.length&&!e.internal&&(!F.forms||F.forms.has(e.form));
 const formsOf=pd=>{const[f,t]=range();return[...new Set(pd.events.filter(e=>evOk(e,f,t)).map(e=>e.form))];};
 const age=p=>Math.round((new Date(today+"T12:00:00Z")-new Date(p.date+"T12:00:00Z"))/864e5);
-function filtered(){const[f,t]=range();const qq=$("q").value.toLowerCase();
+function filtered(rg){const[f,t]=rg||range();const qq=$("q").value.toLowerCase();
   return S.pds.filter(pd=>pd.events.some(e=>evOk(e,f,t))
    &&(!F.owners||F.owners.has(pd.resp))&&(!F.teams||[...F.teams].some(t=>(TEAMS[t]||[]).includes(pd.respId)))&&(!F.fu||F.fu.has(pd.fu))
    &&(!qq||[pd.name,pd.rec?.title,pd.company,pd.email,pd.resp,pd.unqReason,pd.unqBy].join(" ").toLowerCase().includes(qq)));}
@@ -487,7 +518,74 @@ function render(){ if(!S.pds) return; const L=filtered(); const A=stats(L);
      p.first?ptDT(p.first.t):"",p.first?(p.hrs==null?{h:"Unknown",s:-1,c:"Unknown"}:n(p.hrs)):{h:"—",s:-2,c:""},p.meetFirst?{h:esc(ptDT(p.meetFirst.start)),s:+p.meetFirst.start,c:ptDT(p.meetFirst.start)}:{h:"",s:0,c:""},n(age(p)),
      p.recId?{h:`<a href="${SF}${p.type}/${p.recId}/view" target="_blank">Open ${p.type}</a>`,s:p.recId,c:`${SF}${p.type}/${p.recId}/view`}:"—"]),{k:0,d:-1});
   CSVDATA={cols:["Submitted","Name","Title","Company","Form(s)","Owner","Followed up by","Follow-up","Unqualified","Unqualified reason","Unqualified by","First follow-up (PT)","Hrs to follow-up","Meeting booked for (PT)","Days since submitted","Salesforce"],rows:CSVDATA};
+  renderSDR();
 }
+// ---------- SDR view (tab) ----------
+// Headline: % of workable inbounds followed up within SLA_HRS (target SLA_TARGET). Approved by Lily, Nov 5, 2026.
+const SLA_HRS=24, SLA_TARGET=0.8;
+let SCOPE=null, CSVS=null; const myIds=()=>new Set(Object.entries(S.users).filter(([,u])=>ME&&u.name===ME).map(([id])=>id));
+const workable=p=>p.fu!=="Unqualified";
+const needs=p=>workable(p)&&!p.confirmed;
+// SLA: counted only when the exact submission time is known, and only once 24h have passed (or it was already followed up).
+function sla(L){ const nowT=Date.now(); const el=L.filter(p=>workable(p)&&p.exactTime&&(p.confirmed||(nowT-p.exactTime)/36e5>=SLA_HRS));
+  const ok=el.filter(p=>p.confirmed&&p.hrs!=null&&p.hrs<=SLA_HRS).length; return {ok,n:el.length,rate:el.length?ok/el.length:null}; }
+const waitH=p=>(Date.now()-p.start)/36e5;
+const dur=h=>h<1?Math.max(1,Math.round(h*60))+"m":h<24?Math.floor(h)+"h":Math.floor(h/24)+"d "+Math.floor(h%24)+"h";
+const slaCls=v=>v==null?"":v>=SLA_TARGET?"c-g":v>=0.5?"c-a":"c-r";
+function renderSDR(){
+  const mine=myIds(); const hasMine=S.pds.some(p=>mine.has(p.respId));
+  const SC = hasMine ? (SCOPE||"mine") : "all"; // SCOPE = the person's own choice; defaults to their leads
+  $("scMine").disabled=!hasMine; $("scMine").textContent=hasMine?`My leads (${ME})`:"My leads";
+  document.querySelectorAll(".sc").forEach(b=>b.classList.toggle("on",b.dataset.s===SC));
+  $("scNote").textContent=hasMine?"":"· You don't own any inbounds in this date range, so everyone is shown.";
+  const inScope=p=>SC==="all"||mine.has(p.respId);
+  const L=filtered().filter(inScope); const A=stats(L); const s=sla(L);
+  // weekly trend (always last 7 days vs the 7 days before, regardless of the date filter)
+  const wk=sla(filtered([addDays(today,-6),today]).filter(inScope)), pw=sla(filtered([addDays(today,-13),addDays(today,-7)]).filter(inScope));
+  let trend="Last 7 days vs previous 7 days: not enough data yet";
+  if(wk.rate!=null&&pw.rate!=null){ const d=Math.round((wk.rate-pw.rate)*1000)/10; trend=`Last 7 days ${pct(wk.ok,wk.n)} vs previous 7 days ${pct(pw.ok,pw.n)} (${d>0?"▲":d<0?"▼":"■"} ${Math.abs(d).toFixed(1)} pts)`; }
+  const hrs=L.filter(workable).map(p=>p.hrs).filter(h=>h!=null); const med=median(hrs);
+  const rate=s.rate; const w=rate==null?0:Math.round(rate*100);
+  $("hSla").innerHTML=`<div class="l">% followed up within ${SLA_HRS} hrs · the number to grow</div>
+   <div class="big ${rate==null?"":rate>=SLA_TARGET?"good":"bad"}">${rate==null?"—":(rate*100).toFixed(1)+"%"}</div>
+   <div class="prog2"><div style="width:${w}%"></div><div class="tgt" style="left:${SLA_TARGET*100}%" title="Target ${SLA_TARGET*100}%"></div></div>
+   <div class="sm">Target ${SLA_TARGET*100}% · ${fmt(s.ok)} of ${fmt(s.n)} workable inbounds with an exact submission time</div>
+   <div class="sm">${esc(trend)}</div>
+   <div class="sm">Median time to follow-up: <b>${med==null?"—":med.toFixed(1)+" hrs"}</b></div>`;
+  const N=L.filter(needs); const late=N.filter(p=>waitH(p)>SLA_HRS).length;
+  const byO=new Map(); N.forEach(p=>byO.set(p.resp,(byO.get(p.resp)||0)+1));
+  const chips=[...byO.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8).map(([o,c])=>`<span class="chip">${esc(o)}: <b>${c}</b></span>`).join("");
+  $("hNeed").innerHTML=`<div class="l">Needs follow-up now · goal 0</div>
+   <div class="big ${N.length?"bad":"good"}">${fmt(N.length)}</div>
+   <div class="sm">Workable inbounds with no call, email or meeting logged yet${late?` · <span class="late">${fmt(late)} waiting more than ${SLA_HRS} hrs</span>`:""}</div>
+   ${SC==="all"&&chips?`<div class="chips">${chips}</div>`:""}`;
+  const steps=[["Inbound leads",A.n,null],["Workable",A.rn,A.rn],["Followed up",A.fu,A.rn],["Connected",A.conn,A.rn],["Meeting scheduled",A.mtg,A.rn]];
+  $("funnel").innerHTML=steps.map(([l,v,base])=>`<div class="fn"><div>${l}</div><div class="bw"><div style="width:${A.n?Math.round(100*v/A.n):0}%"></div></div><div class="v">${fmt(v)} <span>${base==null?"":pct(v,base)}</span></div></div>`).join("")+(A.unq?`<div class="muted" style="font-size:11.5px;margin-top:4px">${fmt(A.unq)} unqualified removed between Inbound leads and Workable.</div>`:"");
+  $("cntS").textContent=fmt(N.length)+" to follow up";
+  CSVS=table("tNeed",[{l:"Waiting"},{l:"Name"},{l:"Title"},{l:"Company"},{l:"Form(s)"},{l:"Owner"},{l:"Submitted (PT)"},{l:"Salesforce"}],
+   N.map(p=>{const h=waitH(p); const ap=p.exactTime?"":"≈";
+     return[{h:`<span class="${h>SLA_HRS?"late":""}">${ap}${dur(h)}</span>`,s:h,c:ap+dur(h)},p.name,p.rec?.title||p.events.map(e=>e.f.title).find(Boolean)||"",p.company,formsOf(p).join("; "),p.resp,
+      p.exactTime?ptDT(p.exactTime):p.date,
+      p.recId?{h:`<a href="${SF}${p.type}/${p.recId}/view" target="_blank">Open ${p.type}</a>`,s:p.recId,c:`${SF}${p.type}/${p.recId}/view`}:"—"];}),{k:0,d:-1});
+  CSVS={cols:["Waiting","Name","Title","Company","Form(s)","Owner","Submitted (PT)","Salesforce"],rows:CSVS};
+  const g=new Map(); L.forEach(p=>{if(!g.has(p.resp))g.set(p.resp,[]);g.get(p.resp).push(p);});
+  table("tOwnS",[{l:"Owner"},{l:"Needs follow-up",n:1},{l:`% within ${SLA_HRS}h`,n:1},{l:"% followed up",n:1},{l:"Meetings",n:1},{l:"Inbounds",n:1},{l:"Median hrs",n:1}],
+   [...g.entries()].map(([o,v])=>{const a=stats(v), sv=sla(v); const hh=v.filter(workable).map(p=>p.hrs).filter(h=>h!=null);
+     return[o,n(v.filter(needs).length),{h:`<span class="${slaCls(sv.rate)}">${sv.rate==null?"—":(sv.rate*100).toFixed(1)+"%"}</span>`,s:sv.rate??-1},r(a.fu,a.rn),n(a.mtg),n(a.n),n(median(hh))];}),{k:1});
+  const fm=new Map(); L.forEach(p=>formsOf(p).forEach(f=>{if(!fm.has(f))fm.set(f,[]);fm.get(f).push(p);}));
+  table("tFormS",[{l:"Form"},{l:"Inbounds",n:1},{l:"Needs follow-up",n:1},{l:`% within ${SLA_HRS}h`,n:1},{l:"% followed up",n:1},{l:"Meetings",n:1},{l:"Unqualified",n:1}],
+   [...fm.entries()].map(([f,v])=>{const a=stats(v), sv=sla(v); return[f,n(a.n),n(v.filter(needs).length),{h:`<span class="${slaCls(sv.rate)}">${sv.rate==null?"—":(sv.rate*100).toFixed(1)+"%"}</span>`,s:sv.rate??-1},r(a.fu,a.rn),n(a.mtg),n(a.unq)];}),{k:1});
+}
+$("csvS").onclick=()=>{if(!CSVS)return;const c=v=>'"'+String(v?.c??v?.h??v??"").replace(/<[^>]+>/g,"").replace(/"/g,'""')+'"';
+  const txt=[CSVS.cols.map(c).join(","),...CSVS.rows.map(r=>r.map(c).join(","))].join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"text/csv"}));a.download=`${today}-needs-follow-up.csv`;a.click();};
+document.querySelectorAll(".sc").forEach(b=>b.onclick=()=>{if(b.disabled)return;SCOPE=b.dataset.s;renderSDR();});
+function showTab(v){ document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+  $("viewTeam").style.display=v==="team"?"":"none"; $("viewSDR").style.display=v==="sdr"?"":"none";
+  document.querySelector("h1").textContent="Inbound Routing & Follow-Up — "+(v==="sdr"?"SDR View":"Team View");
+  history.replaceState(null,"",v==="sdr"?"#sdr":location.pathname+location.search); }
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>showTab(b.dataset.v));
+showTab(location.hash==="#sdr"?"sdr":"team");
 $("csv").onclick=()=>{if(!CSVDATA)return;const c=v=>'"'+String(v?.c??v?.h??v??"").replace(/<[^>]+>/g,"").replace(/"/g,'""')+'"';
   const txt=[CSVDATA.cols.map(c).join(","),...CSVDATA.rows.map(r=>r.map(c).join(","))].join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"text/csv"}));a.download=`${today}-inbound-follow-up.csv`;a.click();};
@@ -524,7 +622,7 @@ async function loadUnqBy(){
   });
 }
 async function run(startDs){
-  try{ $("filters").style.opacity=.5; await load(startDs); teamify(); status("Loading unqualified details…"); await loadUnqBy(); initFilters();
+  try{ $("filters").style.opacity=.5; await load(startDs); teamify(); status("Loading unqualified details…"); await loadUnqBy(); await meReady; initFilters();
     const L=S.pds.filter(p=>p.events.some(e=>!e.tests.length&&!e.internal));
     console.log("TEAMVIEW",JSON.stringify({inbounds:L.length,followed:L.filter(p=>p.confirmed).length,unassigned:L.filter(p=>!p.respId).length,calls}));
     status(`Showing Sales-Intent inbounds since ${startDs} · refreshed ${ptDT(new Date())} PT`); $("filters").style.opacity=1; render();
