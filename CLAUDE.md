@@ -34,6 +34,7 @@ Read this before changing anything in this repository.
 - **Meeting scheduled** = non-cancelled Event with the person (WhoId), credited by the Event's CreatedDate to the most recent submission before it. Future meetings count.
 - **Team** = matched on current Owner via the `TEAMS` list (Salesforce User IDs) in `dashboard/index.html`. People can be on multiple teams.
 - **Unqualified** = Lead/Contact status Unqualified and not followed up; excluded from the follow-up rate.
+- **SDR view tab** (approved by Lily, Nov 5, 2026): headline = % of workable inbounds followed up within 24 hrs (`SLA_HRS`), target 80% (`SLA_TARGET`). Counts only inbounds with an exact submission time, once 24 hrs have passed or they were followed up. Workable = inbounds minus unqualified. "Needs follow-up now" = workable with no outreach (goal 0). Defaults to the signed-in person's own leads (matched by name); Team view stays the first tab.
 - **Owner** = current Lead/Contact Owner; integration/system users show as Unassigned.
 
 ## Settings that need periodic review
