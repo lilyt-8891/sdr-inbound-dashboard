@@ -152,13 +152,22 @@ const sq = s => "'" + String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'") + "'";
 const chunk = (a,n) => { const o=[]; for(let i=0;i<a.length;i+=n) o.push(a.slice(i,i+n)); return o; };
 const status = t => $("status").textContent = t;
 let calls=0, done=0; const prog = () => $("prog").style.width = Math.min(100, Math.round(100*done/Math.max(calls,1)))+"%";
+// Display-only fields that a person's Salesforce access may hide. If Salesforce says one of these is
+// not visible to the signed-in person, the dashboard drops it from the query and keeps loading.
+// Fields used in metrics (e.g. Working_Timestamp__c) are NOT in this list on purpose.
+const OPTIONAL_FIELDS = ["Unqualified_Reason__c","Unqualified_Explanation__c"];
+const hiddenFields = new Set();
+const dropField = (soql,f) => soql.replace(new RegExp(",\\s*"+f+"\\b"),"");
 async function q(soql){
   calls++; prog();
   const MAX=10;
+  hiddenFields.forEach(f => soql = dropField(soql,f));
   for (let attempt=0; attempt<MAX; attempt++){
     await gate();
     const r = await callSoql(soql);
     if (r.isError){ const m = r.content?.[0]?.text || "error"; const rl=/rate limit|not currently shown/i.test(m);
+      const hid = /INVALID_FIELD/.test(m) && OPTIONAL_FIELDS.find(f => m.includes("'"+f+"'") && soql.includes(f));
+      if (hid){ hiddenFields.add(hid); soql = dropField(soql,hid); continue; }
       if (attempt===MAX-1 || (!rl && (attempt>=2 || /INVALID_|INSUFFICIENT|MALFORMED|not supported/i.test(m)))){ done++; prog(); throw new Error(m+"\nQuery: "+soql.slice(0,300)); }
       if (rl) status("Salesforce connector is busy — waiting and retrying…");
       await new Promise(z=>setTimeout(z,(rl?2500:800)*(attempt+1))); continue; }
@@ -341,7 +350,8 @@ async function load(startDs){
   S.REC=REC; S.ACT=ACT; S.ownerChanges=ownerChanges; S.statusCh=statusCh; S.meetUnverified=meetUnverified; S.loadedStart=startDs;
   S.counts={tasks:tasks.length, leads:leads.length, cons:cons.length, acts:acts.length, evs:evs.length, whoIds:whoIds.length};
   buildPersonDays(events);
-  const el=$("err"); if (S.warn.length){ el.style.display="block"; el.style.background="#fff3e0"; el.style.color="#8a5300"; el.textContent="Note: "+S.warn.join(" "); } else el.style.display="none";
+  const el=$("err"); if (hiddenFields.size) S.warn.push("Your Salesforce access can't read "+[...hiddenFields].join(", ")+", so those details are left out of the Unqualified reason column.");
+  if (S.warn.length){ el.style.display="block"; el.style.background="#fff3e0"; el.style.color="#8a5300"; el.textContent="Note: "+S.warn.join(" "); } else el.style.display="none";
 }
 // ---------- owners ----------
 const ownerName = id => !id ? "—" : S.users[id] ? S.users[id].name + (S.users[id].active?"":" (inactive)") : (S.queueNames[id] ? S.queueNames[id]+" (queue)" : id.startsWith("00G")?"Queue "+id:id);
