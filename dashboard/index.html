@@ -88,7 +88,7 @@ details.card summary{cursor:pointer}
   The outcomes are a waterfall: every <b>Meeting scheduled</b> also counts as <b>Connected</b>, and every Connected also counts as <b>Followed up</b>.<br>
   <b>Followed up</b> = any outreach logged in Salesforce after the submission: an outbound call (any result), a manual sales email, an Outreach sequence email, or a booked meeting.<br>
   <b>Connected</b> = the rep reached the person: a call logged with an "Answered" or "Correct contact" result, or a booked meeting.<br>
-  <b>Meeting scheduled</b> = a meeting (calendar invite) in Salesforce with this person that was booked after the submission and not cancelled. Future meetings count. “Meeting booked for” shows the date of the first one.<br>
+  <b>Meeting scheduled</b> = a meeting (calendar invite) in Salesforce with this person that was booked after the submission (or up to 15 minutes before it, since booking-page meetings can sync to Salesforce before the form does) and not cancelled. Future meetings count. “Meeting booked for” shows the date of the first one.<br>
   <b>Not followed up</b> = no call, email or meeting logged after the submission. Percentages exclude unqualified inbounds.<br>
   <b>Team</b> = inbounds whose current Owner is on that team. Someone on two teams (e.g. Natasha) shows under both.<br>
   <b>Unqualified</b> = the Lead/Contact is marked Unqualified in Salesforce and wasn’t followed up. These are excluded from the follow-up rate so they don’t count against the rep (unqualified inbounds that were followed up still count as followed up).<br>
@@ -136,7 +136,8 @@ const CONNECTED = new Set(["Answered - Meeting Set","Answered - Not Interested",
 const NOT_CONNECTED = new Set(["No Answer","Left Voicemail","Bad Number","Gatekeeper"]);
 const INTERNAL_DOMAINS = ["commure.com","athelas.com","getathelas.com","augmedix.com"];
 const DISPOSABLE = ["example.com","example.net","example.org","mailinator.com","yopmail.com","guerrillamail.com","10minutemail.com","tempmail.com"];
-const FU_ORDER = ["Meeting Scheduled","Connected","Manual Outreach Attempted","Automated Sequence Email Only","No Sales Activity"];
+const MEET_GRACE_MIN = 15; // booked meetings count if created up to this many minutes before the form submission (approved by Lily, Nov 11, 2026)
+const FU_ORDER =["Meeting Scheduled","Connected","Manual Outreach Attempted","Automated Sequence Email Only","No Sales Activity"];
 // ---------- helpers ----------
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -428,7 +429,10 @@ function buildPersonDays(events){
     const who = new Set(list.flatMap(pd=>[...pd.whoIds]));
     const acts = [...who].flatMap(w=>S.ACT[w]||[]).sort((a,b)=>a.t-b.t);
     list.forEach(pd=>pd.acts=[]);
-    acts.forEach(a=>{ let tgt=null; for(const pd of list){ if (pd.start<=a.t) tgt=pd; } if (tgt) tgt.acts.push(a); });
+    // A meeting booked on the rep's booking page right after a form can reach Salesforce a few minutes BEFORE the
+    // form submission does. So a booked meeting still counts for a submission if it was booked up to MEET_GRACE_MIN before it.
+    acts.forEach(a=>{ const grace = a.cls==="meet_sched" ? MEET_GRACE_MIN*60000 : 0;
+      let tgt=null; for(const pd of list){ if (+pd.start<=+a.t+grace) tgt=pd; } if (tgt) tgt.acts.push(a); });
     list.forEach((pd,i)=>{
       const prim = pd.acts.filter(a=>["call_conn","call_nc","call_amb","email_man","meet_ver","meet_sched"].includes(a.cls));
       pd.calls = pd.acts.filter(a=>a.cls.startsWith("call")).length;
@@ -444,7 +448,7 @@ function buildPersonDays(events){
       pd.fu = pd.meetSched ? "Meeting Scheduled" : (pd.callsConn||pd.meetVer) ? "Connected" : prim.length ? "Manual Outreach Attempted" : pd.seqEmails ? "Automated Sequence Email Only" : "No Sales Activity";
       pd.confirmed = pd.fu==="Meeting Scheduled"||pd.fu==="Connected"||pd.fu==="Manual Outreach Attempted";
       pd.first = prim[0]||null; pd.followedBy = pd.first ? pd.first.owner : null;
-      pd.hrs = pd.first && pd.exactTime ? (pd.first.t - pd.exactTime)/36e5 : null;
+      pd.hrs = pd.first && pd.exactTime ? Math.max(0,(pd.first.t - pd.exactTime)/36e5) : null;
       pd.ttf = !pd.first ? "No follow-up" : pd.hrs==null ? "Unknown (no exact time)" : pd.hrs<=1?"≤1h":pd.hrs<=4?"1–4h":pd.hrs<=24?"4–24h":pd.hrs<=48?"24–48h":">48h";
       pd.resubmitted = !pd.confirmed && i<list.length-1;
       // status-based (Leads, incl. converted lead of a contact)
