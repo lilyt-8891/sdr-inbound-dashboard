@@ -64,14 +64,14 @@ details.card summary{cursor:pointer}
    <div class="card hero" id="hNeed"></div>
   </div>
   <div class="card"><h3>Funnel</h3><div class="note">Percentages are of workable inbounds (inbounds minus unqualified).</div><div id="funnel"></div></div>
-  <div class="card"><h3>Needs follow-up now</h3><div class="note">Workable inbounds with no call, email or meeting logged yet, oldest first. Red = waiting more than 24 hours.</div>
+  <div class="card"><h3>Inbounds</h3><div class="note">Every inbound matching the filters above, with its status (same as the Team view). Leads that still need follow-up are listed first, oldest first; red = waiting more than 24 hours. Use the Status filter at the top to narrow the list.</div>
    <div class="tools"><button class="btn" id="csvS">Export CSV</button><span class="muted" id="cntS"></span></div>
    <div class="tw" id="tNeed"></div></div>
   <div class="card"><h3>By owner</h3><div class="note">Sorted by Needs follow-up. % within 24h: green = at or above the 80% target, amber = 50–79%, red = below 50%.</div><div class="tw" id="tOwnS" style="max-height:380px"></div></div>
   <details class="card"><summary><b>Diagnostics</b> <span class="muted">· by form (for managers). The full list of inbounds is in the Team view tab.</span></summary><div class="tw" id="tFormS" style="max-height:380px;margin-top:8px"></div></details>
   <div class="card foot"><b>How to read this</b><br>
    <b>% followed up within 24 hrs</b> = of workable inbounds with an exact submission time, the share that got any outreach (call, email or booked meeting) within 24 hours of submitting. Inbounds less than 24 hours old that haven’t been followed up yet aren’t counted until their 24 hours are up. Target: 80%.<br>
-   <b>Workable</b> = inbounds minus unqualified. <b>Needs follow-up now</b> = workable inbounds with no outreach logged yet. Goal: 0.<br>
+   <b>Workable</b> = inbounds minus unqualified. <b>Needs follow-up now</b> = workable inbounds with no outreach logged yet. Goal: 0. The <b>Inbounds</b> list below shows every inbound, including worked and unqualified ones, with a status that matches the Team view.<br>
    <b>My leads</b> = inbounds currently owned by you in Salesforce. All other definitions match the Team view tab.</div>
  </section>
  <section id="viewTeam">
@@ -571,13 +571,16 @@ function renderSDR(){
    ${SC==="all"&&chips?`<div class="chips">${chips}</div>`:""}`;
   const steps=[["Inbound leads",A.n,null],["Workable",A.rn,A.rn],["Followed up",A.fu,A.rn],["Connected",A.conn,A.rn],["Meeting scheduled",A.mtg,A.rn]];
   $("funnel").innerHTML=steps.map(([l,v,base])=>`<div class="fn"><div>${l}</div><div class="bw"><div style="width:${A.n?Math.round(100*v/A.n):0}%"></div></div><div class="v">${fmt(v)} <span>${base==null?"":pct(v,base)}</span></div></div>`).join("")+(A.unq?`<div class="muted" style="font-size:11.5px;margin-top:4px">${fmt(A.unq)} unqualified removed between Inbound leads and Workable.</div>`:"");
-  $("cntS").textContent=fmt(N.length)+" to follow up";
-  CSVS=table("tNeed",[{l:"Waiting"},{l:"Name"},{l:"Title"},{l:"Company"},{l:"Form(s)"},{l:"Owner"},{l:"Submitted (PT)"},{l:"Salesforce"}],
-   N.map(p=>{const h=waitH(p); const ap=p.exactTime?"":"≈";
-     return[{h:`<span class="${h>SLA_HRS?"late":""}">${ap}${dur(h)}</span>`,s:h,c:ap+dur(h)},p.name,p.rec?.title||p.events.map(e=>e.f.title).find(Boolean)||"",p.company,formsOf(p).join("; "),p.resp,
+  $("cntS").textContent=`${fmt(N.length)} to follow up · ${fmt(L.length)} inbounds shown`;
+  // Every inbound stays in the list (so a lead doesn't vanish once it's worked or marked unqualified).
+  // "Waiting" only applies to leads that still need follow-up; those sort first, oldest first. The rest follow, newest first.
+  CSVS=table("tNeed",[{l:"Waiting"},{l:"Status"},{l:"Name"},{l:"Title"},{l:"Company"},{l:"Form(s)"},{l:"Owner"},{l:"Submitted (PT)"},{l:"Salesforce"}],
+   L.map(p=>{const h=waitH(p); const ap=p.exactTime?"":"≈"; const nd=needs(p);
+     const wait=nd?{h:`<span class="${h>SLA_HRS?"late":""}">${ap}${dur(h)}</span>`,s:h,c:ap+dur(h)}:{h:"—",s:-1-h,c:""};
+     return[wait,{h:pill(p.fu),s:FU_ORDER.indexOf(p.fu),c:LABEL[p.fu]},p.name,p.rec?.title||p.events.map(e=>e.f.title).find(Boolean)||"",p.company,formsOf(p).join("; "),p.resp,
       p.exactTime?ptDT(p.exactTime):p.date,
       p.recId?{h:`<a href="${SF}${p.type}/${p.recId}/view" target="_blank">Open ${p.type}</a>`,s:p.recId,c:`${SF}${p.type}/${p.recId}/view`}:"—"];}),{k:0,d:-1});
-  CSVS={cols:["Waiting","Name","Title","Company","Form(s)","Owner","Submitted (PT)","Salesforce"],rows:CSVS};
+  CSVS={cols:["Waiting","Status","Name","Title","Company","Form(s)","Owner","Submitted (PT)","Salesforce"],rows:CSVS};
   const g=new Map(); L.forEach(p=>{if(!g.has(p.resp))g.set(p.resp,[]);g.get(p.resp).push(p);});
   table("tOwnS",[{l:"Owner"},{l:"Needs follow-up",n:1},{l:`% within ${SLA_HRS}h`,n:1},{l:"% followed up",n:1},{l:"Meetings",n:1},{l:"Inbounds",n:1},{l:"Median hrs",n:1}],
    [...g.entries()].map(([o,v])=>{const a=stats(v), sv=sla(v); const hh=v.filter(workable).map(p=>p.hrs).filter(h=>h!=null);
@@ -588,7 +591,7 @@ function renderSDR(){
 }
 $("csvS").onclick=()=>{if(!CSVS)return;const c=v=>'"'+String(v?.c??v?.h??v??"").replace(/<[^>]+>/g,"").replace(/"/g,'""')+'"';
   const txt=[CSVS.cols.map(c).join(","),...CSVS.rows.map(r=>r.map(c).join(","))].join("\n");
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"text/csv"}));a.download=`${today}-needs-follow-up.csv`;a.click();};
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"text/csv"}));a.download=`${today}-sdr-inbounds.csv`;a.click();};
 document.querySelectorAll(".sc").forEach(b=>b.onclick=()=>{if(b.disabled)return;SCOPE=b.dataset.s;renderSDR();});
 function showTab(v){ document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
   $("viewTeam").style.display=v==="team"?"":"none"; $("viewSDR").style.display=v==="sdr"?"":"none";
