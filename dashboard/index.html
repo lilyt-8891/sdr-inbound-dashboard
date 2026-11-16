@@ -80,8 +80,8 @@ details.card summary{cursor:pointer}
   <div class="card"><h3>By owner</h3><div class="note">Owner = the current Lead/Contact Owner in Salesforce (inactive users marked “(inactive)”, queues “(queue)”).</div><div class="tw" id="tOwn" style="max-height:380px"></div></div>
   <div class="card"><h3>By form</h3><div class="note">A person who submitted two forms on the same day appears under both forms but counts once in totals.</div><div class="tw" id="tForm" style="max-height:380px"></div></div>
  </div>
- <div class="card"><h3>All inbounds</h3>
-  <div class="tools"><label class="tog"><input type="checkbox" id="onlyNot">Show only not followed up (excludes unqualified)</label><button class="btn" id="csv">Export CSV</button><span class="muted" id="cnt"></span></div>
+ <div class="card"><h3>All inbounds</h3><div class="note">Leads and Contacts flagged Unqualified in Salesforce are not listed here. They are still counted in the numbers above.</div>
+  <div class="tools"><label class="tog"><input type="checkbox" id="onlyNot">Show only not followed up</label><button class="btn" id="csv">Export CSV</button><span class="muted" id="cnt"></span></div>
   <div class="tw" id="tAll"></div></div>
  <div class="card foot"><b>How to read this</b><br>
   <b>Inbound</b> = one person submitting one or more Sales-Intent forms on a given day (duplicates, tests and internal submissions removed).<br>
@@ -475,7 +475,7 @@ const F={forms:null,owners:null,fu:null,teams:null};
 // Teams = Salesforce User IDs of each team's members (a person can be on more than one team).
 // Team filter matches on the inbound's current Owner. To change a team, edit the IDs here.
 const TEAMS={
- "Enterprise":["005Vo00000A8hzjIAB" /*Van Nguyen (inactive)*/,"005Vo00000OoNgMIAV" /*Bryan Bynum*/,"005Vo000017N5wvIAC" /*Mia Sacco*/,"005Vo0000173ZPhIAM" /*Isaac Troy*/,"005Vo000016iIGdIAM" /*Ireland Conti*/,"005Vo000000LRjaIAG" /*Jenny Pham*/],
+ "Enterprise":["005Vo00000OoNgMIAV" /*Bryan Bynum*/,"005Vo000017N5wvIAC" /*Mia Sacco*/,"005Vo0000173ZPhIAM" /*Isaac Troy*/,"005Vo000016iIGdIAM" /*Ireland Conti*/,"005Vo000000LRjaIAG" /*Jenny Pham*/],
  "Agents":["005Vo0000103qb3IAA" /*Natasha Chodavarapu*/,"005Vo00000EAGZhIAP" /*Scott Gilbertson (inactive)*/,"005Vo00000NCWDNIA5" /*Han Kang*/],
  "Mid-Market/Athelas":["005Vo000007rdvFIAQ" /*Grace Martello*/]
 };
@@ -525,8 +525,10 @@ function render(){ if(!S.pds) return; const L=filtered(); const A=stats(L);
   const fm=new Map();L.forEach(p=>formsOf(p).forEach(f=>{if(!fm.has(f))fm.set(f,[]);fm.get(f).push(p);}));
   table("tForm",[{l:"Form"},{l:"Inbounds",n:1},{l:"Followed up",n:1},{l:"Rate",n:1},{l:"Meetings",n:1},{l:"Not followed up",n:1},{l:"Unqualified",n:1},{l:"Unassigned",n:1}],
    [...fm.entries()].map(([f,v])=>{const a=stats(v);return[f,n(a.n),n(a.fu),r(a.fu,a.rn),n(a.mtg),n(a.rn-a.fu),n(a.unq),n(v.filter(p=>!p.respId).length)];}),{k:1});
-  const rows=L.filter(p=>!$("onlyNot").checked||(!p.confirmed&&!p.unq));
-  $("cnt").textContent=fmt(rows.length)+" inbounds";
+  // The All inbounds table hides anyone flagged Unqualified (Team view only; the SDR view list and the totals above still include them).
+  const rows=L.filter(p=>!p.unq&&(!$("onlyNot").checked||!p.confirmed));
+  const unqHidden=L.filter(p=>p.unq).length;
+  $("cnt").textContent=fmt(rows.length)+" inbounds"+(unqHidden?` · ${fmt(unqHidden)} unqualified hidden`:"");
   CSVDATA=table("tAll",[{l:"Submitted"},{l:"Name"},{l:"Title"},{l:"Company"},{l:"Form(s)"},{l:"Owner"},{l:"Followed up by"},{l:"Follow-up"},{l:"Unqualified"},{l:"Unqualified reason"},{l:"Unqualified by"},{l:"First follow-up (PT)"},{l:"Hrs to follow-up",n:1},{l:"Meeting booked for (PT)"},{l:"Days since submitted",n:1},{l:"Salesforce"}],
    rows.map(p=>[p.date,p.name,p.rec?.title||p.events.map(e=>e.f.title).find(Boolean)||"",p.company,formsOf(p).join("; "),p.resp,p.followedBy?ownerName(p.followedBy):"",{h:pill(p.fu),s:FU_ORDER.indexOf(p.fu),c:LABEL[p.fu]},p.unq?"Yes":"",p.unq?(p.unqReason||""):"",p.unq?(p.unqBy||""):"",
      p.first?ptDT(p.first.t):"",p.first?(p.hrs==null?{h:"Unknown",s:-1,c:"Unknown"}:n(p.hrs)):{h:"—",s:-2,c:""},p.meetFirst?{h:esc(ptDT(p.meetFirst.start)),s:+p.meetFirst.start,c:ptDT(p.meetFirst.start)}:{h:"",s:0,c:""},n(age(p)),
