@@ -89,6 +89,7 @@ details.card summary{cursor:pointer}
   <b>Followed up</b> = any outreach logged in Salesforce after the submission: an outbound call (any result), a manual sales email, an Outreach sequence email, or a booked meeting.<br>
   <b>Connected</b> = the rep reached the person: a call logged with an "Answered" or "Correct contact" result, or a booked meeting.<br>
   <b>Meeting scheduled</b> = a meeting (calendar invite) in Salesforce with this person that was booked after the submission (or up to 15 minutes before it, since booking-page meetings can sync to Salesforce before the form does) and not cancelled. Future meetings count. “Meeting booked for” shows the date of the first one.<br>
+  <b>Followed up (later submission)</b> = this person submitted again afterwards and the rep followed up after that newer submission, so this earlier submission also counts as followed up. It is not counted as Connected or Meeting scheduled.<br>
   <b>Not followed up</b> = no call, email or meeting logged after the submission. Percentages exclude unqualified inbounds.<br>
   <b>Team</b> = inbounds whose current Owner is on that team. Someone on two teams (e.g. Natasha) shows under both.<br>
   <b>Unqualified</b> = the Lead/Contact is marked Unqualified in Salesforce and wasn’t followed up. These are excluded from the follow-up rate so they don’t count against the rep (unqualified inbounds that were followed up still count as followed up).<br>
@@ -137,7 +138,7 @@ const NOT_CONNECTED = new Set(["No Answer","Left Voicemail","Bad Number","Gateke
 const INTERNAL_DOMAINS = ["commure.com","athelas.com","getathelas.com","augmedix.com"];
 const DISPOSABLE = ["example.com","example.net","example.org","mailinator.com","yopmail.com","guerrillamail.com","10minutemail.com","tempmail.com"];
 const MEET_GRACE_MIN = 15; // booked meetings count if created up to this many minutes before the form submission (approved by Lily, Nov 11, 2026)
-const FU_ORDER =["Meeting Scheduled","Connected","Manual Outreach Attempted","Automated Sequence Email Only","No Sales Activity"];
+const FU_ORDER =["Meeting Scheduled","Connected","Manual Outreach Attempted","Followed Up Later","Automated Sequence Email Only","No Sales Activity"];
 // ---------- helpers ----------
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -468,8 +469,8 @@ function buildPersonDays(events){
   S.pds = pds;
 }
 // ---------- Team view UI ----------
-const LABEL={"Meeting Scheduled":"Meeting scheduled","Connected":"Connected","Manual Outreach Attempted":"Attempted – not connected","Automated Sequence Email Only":"Outreach sequence email","No Sales Activity":"No follow-up","Unqualified":"Unqualified – no follow-up needed"};
-const PCLS={"Meeting Scheduled":"p-meet","Connected":"p-conn","Manual Outreach Attempted":"p-man","Automated Sequence Email Only":"p-seq","No Sales Activity":"p-none","Unqualified":"p-gray"};
+const LABEL={"Meeting Scheduled":"Meeting scheduled","Connected":"Connected","Manual Outreach Attempted":"Attempted – not connected","Followed Up Later":"Followed up (later submission)","Automated Sequence Email Only":"Outreach sequence email","No Sales Activity":"No follow-up","Unqualified":"Unqualified – no follow-up needed"};
+const PCLS={"Meeting Scheduled":"p-meet","Connected":"p-conn","Manual Outreach Attempted":"p-man","Followed Up Later":"p-man","Automated Sequence Email Only":"p-seq","No Sales Activity":"p-none","Unqualified":"p-gray"};
 const pill=s=>`<span class="pill ${PCLS[s]}">${LABEL[s]}</span>`;
 const F={forms:null,owners:null,fu:null,teams:null};
 // Teams = Salesforce User IDs of each team's members (a person can be on more than one team).
@@ -543,7 +544,7 @@ let SCOPE=null, CSVS=null; const myIds=()=>new Set(Object.entries(S.users).filte
 const workable=p=>p.fu!=="Unqualified";
 const needs=p=>workable(p)&&!p.confirmed;
 // SLA: counted only when the exact submission time is known, and only once 24h have passed (or it was already followed up).
-function sla(L){ const nowT=Date.now(); const el=L.filter(p=>workable(p)&&p.exactTime&&(p.confirmed||(nowT-p.exactTime)/36e5>=SLA_HRS));
+function sla(L){ const nowT=Date.now(); const el=L.filter(p=>workable(p)&&p.exactTime&&((p.confirmed&&!p.later)||(nowT-p.exactTime)/36e5>=SLA_HRS));
   const ok=el.filter(p=>p.confirmed&&p.hrs!=null&&p.hrs<=SLA_HRS).length; return {ok,n:el.length,rate:el.length?ok/el.length:null}; }
 const waitH=p=>(Date.now()-p.start)/36e5;
 const dur=h=>h<1?Math.max(1,Math.round(h*60))+"m":h<24?Math.floor(h)+"h":Math.floor(h/24)+"d "+Math.floor(h%24)+"h";
@@ -627,8 +628,17 @@ function teamify(){ S.pds.forEach(pd=>{
   pd.hrs=pd.first&&pd.exactTime?(pd.first.t-pd.exactTime)/36e5:null;
   const id = !isInteg(pd.ownCur) ? pd.ownCur : null; // Current Owner is the primary ownership
   pd.respId=id; pd.resp=id?ownerName(id):"Unassigned"; pd.respInactive=!!(id&&S.users[id]&&!S.users[id].active);
-  pd.unq=pd.rec?.status==="Unqualified"; if(pd.unq&&!pd.confirmed) pd.fu="Unqualified";
-}); }
+});
+  // A follow-up on a LATER submission also closes this person's earlier submissions that had no outreach
+  // (approved by Lily, Nov 17, 2026). They get their own status and are NOT counted as Connected or Meeting scheduled,
+  // so nothing is double counted. "Followed up by" shows who worked the person; time-to-follow-up stays blank.
+  const byP={}; S.pds.forEach(pd=>(byP[pd.person]=byP[pd.person]||[]).push(pd));
+  Object.values(byP).forEach(list=>{ list.sort((a,b)=>a.start-b.start);
+    list.forEach((pd,i)=>{ if(pd.confirmed) return;
+      const later=list.slice(i+1).find(x=>x.confirmed&&!x.later);
+      if(later){ pd.confirmed=true; pd.later=true; pd.fu="Followed Up Later"; pd.followedBy=later.followedBy; pd.first=null; pd.hrs=null; } }); });
+  S.pds.forEach(pd=>{ pd.unq=pd.rec?.status==="Unqualified"; if(pd.unq&&!pd.confirmed) pd.fu="Unqualified"; });
+}
 async function loadUnqBy(){
   const ids=[...new Set(S.pds.filter(p=>p.unq&&p.rec).flatMap(p=>p.rec.leadIds))]; const by={};
   if(ids.length){ try{ const rows=await byIds(ids,x=>`SELECT Id, LeadId, NewValue, CreatedDate, CreatedBy.Name FROM LeadHistory WHERE LeadId IN (${x}) AND Field = 'Status'`);

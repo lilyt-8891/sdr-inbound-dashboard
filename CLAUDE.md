@@ -32,6 +32,7 @@ Read this before changing anything in this repository.
 - **Followed up** = outbound call (any result), manual sales email, Outreach sequence email, or booked meeting logged after the submission.
 - **Connected** = call where the rep reached the person, a verified completed meeting, or a booked meeting.
 - **Meeting scheduled** = non-cancelled Event with the person (WhoId), credited by the Event's CreatedDate to the most recent submission before it. Future meetings count. **15-minute grace** (approved by Lily, Nov 11, 2026): a meeting created up to 15 minutes *before* the submission still counts for it, because meetings booked on the rep's booking page can sync to Salesforce before HubSpot syncs the form (`MEET_GRACE_MIN`).
+- **Followed up (later submission)** (approved by Lily, Nov 17, 2026): if a person submitted again and outreach was logged after the newer submission, their earlier submissions with no outreach also count as Followed up with this status. They are never counted as Connected or Meeting scheduled, and the 24-hour SLA figures are unchanged (`teamify()` and `sla()`).
 - **Team** = matched on current Owner via the `TEAMS` list (Salesforce User IDs) in `dashboard/index.html`. People can be on multiple teams.
 - **Unqualified** = Lead/Contact status Unqualified and not followed up; excluded from the follow-up rate.
 - The Team view's **All inbounds** table hides anyone flagged Unqualified (approved by Lily, Nov 16, 2026). The totals/KPIs and the SDR view list are unchanged.
